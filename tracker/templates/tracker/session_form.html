@@ -1,0 +1,14 @@
+{% extends "tracker/base.html" %}
+
+{% block title %}Nueva Sesión | Game Tracker{% endblock %}
+
+{% block content %}
+<h1>Nueva sesión para {{ game.title }}</h1>
+
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Registrar sesión</button>
+    <a href="{% url 'game_list' %}" role="button" class="secondary">Cancelar</a>
+</form>
+{% endblock %}

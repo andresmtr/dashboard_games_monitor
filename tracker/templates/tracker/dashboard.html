@@ -1,0 +1,441 @@
+{% extends "tracker/base.html" %}
+
+{% block title %}Dashboard | Game Tracker{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Game Intelligence</p>
+        <h1>Panel de Seguimiento</h1>
+        <p class="hero-copy">Analiza tiempo, progreso y gasto de toda tu biblioteca en un solo lugar.</p>
+        {% if steam_ready %}
+            <span class="status-chip status-ok">Steam conectado</span>
+        {% else %}
+            <span class="status-chip status-warn">Configura STEAM_API_KEY y STEAM_ID</span>
+        {% endif %}
+    </div>
+
+    <div class="hero-actions">
+        <form action="{% url 'sync_steam' %}" method="post">
+            {% csrf_token %}
+            <button type="submit" class="cta">Sincronizar Steam</button>
+        </form>
+    </div>
+</section>
+
+<section class="panel filters-panel">
+    <form method="get" class="dashboard-filters">
+        <label>
+            Buscar juego
+            <input type="text" name="search" value="{{ filters.search }}" placeholder="Elden Ring, Portal, etc.">
+        </label>
+
+        <label>
+            Estado
+            <select name="status">
+                <option value="">Todos</option>
+                {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>
+            Año jugado
+            <select name="year">
+                <option value="">Todos</option>
+                {% for year in available_years %}
+                    <option value="{{ year }}" {% if filters.year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>
+            Genero
+            <select name="genre">
+                <option value="">Todos</option>
+                {% for genre in genre_choices %}
+                    <option value="{{ genre }}" {% if filters.genre == genre %}selected{% endif %}>{{ genre }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>
+            Compañía
+            <select name="company">
+                <option value="">Todas</option>
+                {% for company in company_choices %}
+                    <option value="{{ company }}" {% if filters.company == company %}selected{% endif %}>{{ company }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>
+            Propiedad
+            <select name="ownership">
+                <option value="">Todas</option>
+                {% for value, label in ownership_choices %}
+                    <option value="{{ value }}" {% if filters.ownership == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>
+            Horas minimas
+            <input type="number" step="0.5" min="0" name="min_hours" value="{{ filters.min_hours }}" placeholder="0">
+        </label>
+
+        <label>
+            Ordenar por
+            <select name="sort">
+                {% for value, label in sort_choices %}
+                    <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label class="check">
+            <input type="checkbox" name="has_cover" value="1" {% if filters.has_cover == '1' %}checked{% endif %}>
+            Solo juegos con portada
+        </label>
+
+        <div class="filter-actions">
+            <button type="submit">Aplicar filtros</button>
+            <a href="{% url 'dashboard' %}" role="button" class="secondary">Limpiar</a>
+        </div>
+    </form>
+</section>
+
+<section class="kpi-grid">
+    <article class="kpi-card">
+        <h3>Juegos Totales</h3>
+        <p>{{ total_games }}</p>
+        <small>Jugados: {{ played_games }} | No jugados: {{ unplayed_games }}</small>
+        <small>Filtrados: {{ filtered_games }} / Global: {{ global_total_games }}</small>
+    </article>
+
+    <article class="kpi-card">
+        <h3>Horas Totales</h3>
+        <p>{{ total_hours }}</p>
+        <small>Promedio: {{ avg_hours_per_game }} h por juego</small>
+    </article>
+
+    <article class="kpi-card">
+        <h3>Actividad Reciente</h3>
+        <p>{{ recent_activity_hours }} h</p>
+        <small>Steam 2 semanas + sesiones 30 dias</small>
+    </article>
+
+    <article class="kpi-card">
+        <h3>Estados</h3>
+        <p>Jugando {{ playing_games }}</p>
+        <small>Backlog: {{ backlog_games }}</small>
+    </article>
+
+    <article class="kpi-card">
+        <h3>Amigos Steam</h3>
+        <p>{{ steam_friends_total }}</p>
+        <small>En linea: {{ steam_friends_online }} | Jugando: {{ steam_friends_in_game }}</small>
+    </article>
+
+    <article class="kpi-card">
+        <h3>Logros</h3>
+        <p>{{ achievements_unlocked }}/{{ achievements_total }}</p>
+        <small>{{ achievements_rate }}% desbloqueados</small>
+    </article>
+
+    <article class="kpi-card">
+        <h3>Gasto Registrado</h3>
+        {% if spent_by_currency %}
+            {% for item in spent_by_currency %}
+                <p>{{ item.total }} {{ item.currency }}</p>
+            {% endfor %}
+        {% else %}
+            <p>0</p>
+        {% endif %}
+        {% if current_month_spend %}
+            <small>
+                Este mes:
+                {% for item in current_month_spend %}
+                    {{ item.total }} {{ item.currency }}{% if not forloop.last %}, {% endif %}
+                {% endfor %}
+            </small>
+        {% else %}
+            <small>Incluye precio manual o estimado desde Steam.</small>
+        {% endif %}
+    </article>
+</section>
+
+<section class="grid panel-grid steam-overview-grid">
+    <article class="panel steam-profile-panel">
+        <h3>Perfil Steam</h3>
+        {% if steam_profile %}
+            <div class="steam-profile hero-size">
+                {% if steam_profile.avatarfull %}
+                    <img src="{{ steam_profile.avatarfull }}" alt="Avatar Steam de {{ steam_profile.personaname }}" loading="lazy" class="steam-avatar-lg">
+                {% endif %}
+                <div class="steam-profile-main">
+                    <p class="steam-name"><strong>{{ steam_profile.personaname|default:"Sin nombre" }}</strong></p>
+                    <p>Estado: {{ steam_profile_state_label }}</p>
+                    <p>Visibilidad: {{ steam_profile_visibility }}</p>
+                    <p>Ubicación: {{ steam_profile_country }}</p>
+                    {% if steam_profile_created_at %}
+                        <p>Cuenta creada: {{ steam_profile_created_at|date:"Y-m-d" }}</p>
+                    {% endif %}
+                    {% if steam_profile_last_logoff %}
+                        <p>Ultima conexion: {{ steam_profile_last_logoff|date:"Y-m-d H:i" }}</p>
+                    {% endif %}
+                    {% if steam_profile.gameextrainfo %}
+                        <p>Jugando ahora: {{ steam_profile.gameextrainfo }}</p>
+                    {% endif %}
+                    {% if steam_profile.profileurl %}
+                        <a href="{{ steam_profile.profileurl }}" target="_blank" rel="noopener noreferrer">Ver perfil</a>
+                    {% endif %}
+                </div>
+            </div>
+        {% else %}
+            <p>No fue posible cargar el perfil (revisa privacidad o credenciales Steam).</p>
+        {% endif %}
+    </article>
+
+    <article class="panel">
+        <h3>Noticias Steam</h3>
+        {% if steam_news %}
+            <small>Basado en: {{ steam_news_source_game }}</small>
+            <ul class="news-list">
+                {% for item in steam_news %}
+                    <li>
+                        <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+                        {% if item.published_at %}
+                            <small>{{ item.published_at|date:"Y-m-d H:i" }}</small>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>Sin noticias disponibles para los juegos sincronizados.</p>
+        {% endif %}
+    </article>
+</section>
+
+<section class="grid panel-grid">
+    <article class="panel">
+        <h3>Horas por Año (Último juego)</h3>
+        <canvas id="hoursByYearChart" class="chart-canvas"></canvas>
+    </article>
+    <article class="panel">
+        <h3>Horas por Género</h3>
+        <canvas id="hoursByGenreChart" class="chart-canvas"></canvas>
+    </article>
+</section>
+
+<section class="grid panel-grid">
+    <article class="panel">
+        <h3>Compras por Compañía</h3>
+        <canvas id="purchasesByCompanyChart" class="chart-canvas"></canvas>
+    </article>
+</section>
+
+<section class="grid panel-grid">
+    <article class="panel">
+        <h3>Distribucion por Estado</h3>
+        <div class="progress-list">
+            {% for item in status_distribution %}
+                <div class="progress-row">
+                    <span>{{ item.label }} ({{ item.total }})</span>
+                    <div class="progress-track">
+                        <div class="progress-fill accent-2" style="width: {{ item.pct }}%;"></div>
+                    </div>
+                    <small>{{ item.pct }}%</small>
+                </div>
+            {% empty %}
+                <p>Sin datos.</p>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="panel">
+        <h3>Actividad Reciente</h3>
+        <p><strong>{{ recent_activity_hours }} h</strong></p>
+        <p>Steam 2 semanas: {{ recent_activity_steam_minutes }} min</p>
+        <p>Sesiones 30 dias: {{ recent_activity_sessions_minutes }} min</p>
+    </article>
+</section>
+
+<section class="panel">
+    <div class="section-head">
+        <h3>Galeria de Juegos</h3>
+        <small>Top visual con filtros aplicados</small>
+    </div>
+    <div class="game-gallery">
+        {% for game in gallery_games %}
+            <article class="game-card">
+                <div class="cover-wrap">
+                    {% if game.cover_url %}
+                        <img src="{{ game.cover_url }}" alt="Portada de {{ game.title }}" loading="lazy">
+                    {% else %}
+                        <div class="cover-placeholder">Sin portada</div>
+                    {% endif %}
+                    <span class="ownership-badge">{{ game.get_ownership_type_display }}</span>
+                </div>
+                <div class="game-info">
+                    <h4>{{ game.title }}</h4>
+                    <p>{{ game.get_platform_display }} · {{ game.get_status_display }}</p>
+                    <p><strong>{{ game.total_hours_calc }} h</strong> ({{ game.total_minutes_calc }} min)</p>
+                    <p>
+                        Logros:
+                        {% if game.achievements_total > 0 %}
+                            {{ game.achievements_unlocked }} / {{ game.achievements_total }}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </p>
+                    <p>
+                        Valor:
+                        {% if game.effective_spend_calc > 0 %}
+                            {{ game.effective_spend_calc }} {{ game.currency }}
+                        {% else %}
+                            Sin dato
+                        {% endif %}
+                    </p>
+                    {% if game.last_played_at %}
+                        <p>Último juego: {{ game.last_played_at|date:"Y-m-d" }}</p>
+                    {% endif %}
+                    {% if game.store_url %}
+                        <a href="{{ game.store_url }}" target="_blank" rel="noopener noreferrer">Ver en tienda</a>
+                    {% endif %}
+                </div>
+            </article>
+        {% empty %}
+            <p>No hay juegos para los filtros actuales.</p>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="grid panel-grid">
+    <article class="panel">
+        <h3>Top por Tiempo</h3>
+        <table>
+            <thead>
+                <tr><th>Juego</th><th>Plataforma</th><th>Horas</th><th>Propiedad</th></tr>
+            </thead>
+            <tbody>
+                {% for game in top_played %}
+                    <tr>
+                        <td>{{ game.title }}</td>
+                        <td>{{ game.get_platform_display }}</td>
+                        <td>{{ game.total_hours_calc }}</td>
+                        <td>{{ game.get_ownership_type_display }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4">Sin datos.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+
+    <article class="panel">
+        <h3>Top por Gasto</h3>
+        <table>
+            <thead>
+                <tr><th>Juego</th><th>Plataforma</th><th>Precio</th></tr>
+            </thead>
+            <tbody>
+                {% for game in top_spent %}
+                    <tr>
+                        <td>{{ game.title }}</td>
+                        <td>{{ game.get_platform_display }}</td>
+                        <td>{{ game.effective_spend_calc }} {{ game.currency }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="3">Sin datos.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+</section>
+
+<section class="grid panel-grid">
+    <article class="panel">
+        <h3>Ultimos Jugados</h3>
+        <table>
+            <thead>
+                <tr><th>Juego</th><th>Fecha</th></tr>
+            </thead>
+            <tbody>
+                {% for game in recent_games %}
+                    <tr>
+                        <td>{{ game.title }}</td>
+                        <td>{{ game.last_played_at|date:"Y-m-d H:i" }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="2">Sin datos.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+
+    <article class="panel">
+        <h3>Compras Recientes</h3>
+        <table>
+            <thead>
+                <tr><th>Juego</th><th>Fecha</th><th>Precio</th></tr>
+            </thead>
+            <tbody>
+                {% for game in recent_purchases %}
+                    <tr>
+                        <td>{{ game.title }}</td>
+                        <td>{{ game.purchase_date|date:"Y-m-d" }}</td>
+                        <td>{{ game.purchase_price }} {{ game.currency }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="3">Sin datos.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+</section>
+
+{{ chart_hours_year|json_script:"chart-hours-year-data" }}
+{{ chart_hours_genre|json_script:"chart-hours-genre-data" }}
+{{ chart_company_purchases|json_script:"chart-company-purchases-data" }}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    function readChartData(id) {
+        const el = document.getElementById(id);
+        if (!el) return { labels: [], values: [] };
+        return JSON.parse(el.textContent);
+    }
+
+    function buildBarChart(canvasId, dataId, color, label) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const data = readChartData(dataId);
+        if (!data.labels || data.labels.length === 0) return;
+
+        new Chart(canvas, {
+            type: "bar",
+            data: {
+                labels: data.labels,
+                datasets: [{
+                    label: label,
+                    data: data.values,
+                    backgroundColor: color,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    }
+
+    buildBarChart("hoursByYearChart", "chart-hours-year-data", "rgba(31, 111, 218, 0.78)", "Horas");
+    buildBarChart("hoursByGenreChart", "chart-hours-genre-data", "rgba(15, 123, 108, 0.78)", "Horas");
+    buildBarChart("purchasesByCompanyChart", "chart-company-purchases-data", "rgba(223, 138, 42, 0.82)", "Cantidad de juegos");
+</script>
+{% endblock %}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Game Tracker{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="stylesheet" href="/static/tracker/styles.css">
+</head>
+<body>
+    <main class="container app-shell">
+        <nav>
+            <ul>
+                <li><strong>Game Tracker</strong></li>
+            </ul>
+            <ul>
+                <li><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li><a href="{% url 'game_list' %}">Juegos</a></li>
+                <li><a href="{% url 'game_create' %}" role="button" class="secondary">Nuevo juego</a></li>
+            </ul>
+        </nav>
+
+        {% if messages %}
+            {% for message in messages %}
+                <article class="message {{ message.tags }}">{{ message }}</article>
+            {% endfor %}
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>
