@@ -20,6 +20,21 @@
             {% csrf_token %}
             <button type="submit" class="cta">Sincronizar Steam</button>
         </form>
+
+        {% if sqlite_backup_available %}
+            <div class="backup-tools">
+                <a href="{% url 'export_sqlite_database' %}" role="button" class="secondary">Exportar base SQLite</a>
+
+                <form action="{% url 'import_sqlite_database' %}" method="post" enctype="multipart/form-data" class="import-db-form">
+                    {% csrf_token %}
+                    <label for="database_file">Importar respaldo SQLite</label>
+                    <input id="database_file" type="file" name="database_file" accept=".sqlite3,.sqlite,.db" required>
+                    <button type="submit" class="secondary">Importar base SQLite</button>
+                </form>
+
+                <small class="hero-note">Descarga o restaura la base completa cuando estes usando SQLite.</small>
+            </div>
+        {% endif %}
     </div>
 </section>
 

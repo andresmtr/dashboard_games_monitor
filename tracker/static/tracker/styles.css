@@ -101,11 +101,45 @@ nav strong {
     display: flex;
     align-items: center;
     justify-content: end;
+    flex-direction: column;
     gap: 0.6rem;
 }
 
 .hero-actions form {
     margin: 0;
+}
+
+.backup-tools {
+    display: grid;
+    gap: 0.6rem;
+    width: min(100%, 360px);
+}
+
+.backup-tools [role="button"] {
+    margin: 0;
+}
+
+.import-db-form {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.9rem;
+    border: 1px solid var(--stroke);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.import-db-form label {
+    margin: 0;
+    font-weight: 700;
+}
+
+.import-db-form input[type="file"] {
+    margin: 0;
+}
+
+.hero-note {
+    color: var(--muted);
+    text-align: right;
 }
 
 .cta {
@@ -414,10 +448,19 @@ table {
     .hero-actions {
         justify-content: start;
         flex-wrap: wrap;
+        align-items: stretch;
     }
 
     .progress-row {
         grid-template-columns: 1fr;
+    }
+
+    .backup-tools {
+        width: 100%;
+    }
+
+    .hero-note {
+        text-align: left;
     }
 }
 

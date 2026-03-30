@@ -1,10 +1,15 @@
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
+from pathlib import Path
+import os
+import sqlite3
+import tempfile
 
 from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
+from django.db import connections
 from django.db.models import Sum
 from django.db.models.functions import Coalesce
 from django.http import HttpRequest, HttpResponse
@@ -60,6 +65,53 @@ PERSONA_STATE_LABELS = {
     5: "Quiere intercambiar",
     6: "Quiere jugar",
 }
+
+SQLITE_HEADER = b"SQLite format 3\x00"
+SQLITE_REQUIRED_TABLES = {
+    "django_migrations",
+    "django_session",
+    "tracker_gamerecord",
+    "tracker_playsession",
+}
+
+
+def _get_sqlite_db_path() -> Path | None:
+    db_settings = connections["default"].settings_dict
+    if db_settings.get("ENGINE") != "django.db.backends.sqlite3":
+        return None
+
+    raw_name = db_settings.get("NAME")
+    if not raw_name:
+        return None
+
+    return Path(raw_name)
+
+
+def _validate_sqlite_backup(db_path: Path) -> None:
+    with db_path.open("rb") as uploaded_file:
+        if uploaded_file.read(len(SQLITE_HEADER)) != SQLITE_HEADER:
+            raise ValueError("El archivo cargado no es una base SQLite valida.")
+
+    try:
+        with sqlite3.connect(str(db_path)) as connection:
+            quick_check = connection.execute("PRAGMA quick_check").fetchone()
+            if not quick_check or quick_check[0] != "ok":
+                raise ValueError("La base SQLite cargada esta corrupta o incompleta.")
+
+            found_tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+    except sqlite3.DatabaseError as exc:
+        raise ValueError("No fue posible leer la base SQLite cargada.") from exc
+
+    missing_tables = SQLITE_REQUIRED_TABLES - found_tables
+    if missing_tables:
+        raise ValueError(
+            "La base SQLite cargada no parece ser una copia completa de esta aplicacion."
+        )
 
 
 def dashboard(request: HttpRequest) -> HttpResponse:
@@ -369,6 +421,7 @@ def dashboard(request: HttpRequest) -> HttpResponse:
         "chart_hours_genre": chart_hours_genre,
         "chart_company_purchases": chart_company_purchases,
         "steam_ready": bool(settings.STEAM_API_KEY and settings.STEAM_ID),
+        "sqlite_backup_available": _get_sqlite_db_path() is not None,
         "steam_profile": steam_profile,
         "steam_profile_state_label": steam_profile_state_label,
         "steam_profile_visibility": steam_profile_visibility,
@@ -501,4 +554,101 @@ def sync_steam(request: HttpRequest) -> HttpResponse:
             f"Actualizados: {result['updated']}{extra}"
         ),
     )
+    return redirect("dashboard")
+
+
+def export_sqlite_database(request: HttpRequest) -> HttpResponse:
+    db_path = _get_sqlite_db_path()
+    if db_path is None:
+        messages.error(request, "La exportacion solo esta disponible cuando la app usa SQLite.")
+        return redirect("dashboard")
+
+    default_connection = connections["default"]
+    temp_file_path: str | None = None
+
+    try:
+        default_connection.ensure_connection()
+        sqlite_connection = default_connection.connection
+        if sqlite_connection is None:
+            raise RuntimeError("No fue posible abrir la conexion SQLite actual.")
+
+        temp_file = tempfile.NamedTemporaryFile(
+            suffix=".sqlite3",
+            prefix="game_tracker_backup_",
+            delete=False,
+        )
+        temp_file_path = temp_file.name
+        temp_file.close()
+
+        with sqlite3.connect(temp_file_path) as backup_connection:
+            sqlite_connection.backup(backup_connection)
+
+        with open(temp_file_path, "rb") as backup_file:
+            payload = backup_file.read()
+
+        timestamp = timezone.localtime().strftime("%Y%m%d_%H%M%S")
+        response = HttpResponse(payload, content_type="application/vnd.sqlite3")
+        response["Content-Disposition"] = (
+            f'attachment; filename="game_tracker_backup_{timestamp}.sqlite3"'
+        )
+        response["Content-Length"] = str(len(payload))
+        return response
+    except Exception as exc:
+        messages.error(request, f"No fue posible exportar la base SQLite: {exc}")
+        return redirect("dashboard")
+    finally:
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+
+def import_sqlite_database(request: HttpRequest) -> HttpResponse:
+    if request.method != "POST":
+        return redirect("dashboard")
+
+    db_path = _get_sqlite_db_path()
+    if db_path is None:
+        messages.error(request, "La importacion solo esta disponible cuando la app usa SQLite.")
+        return redirect("dashboard")
+
+    uploaded_database = request.FILES.get("database_file")
+    if uploaded_database is None:
+        messages.error(request, "Selecciona un archivo SQLite para importar.")
+        return redirect("dashboard")
+
+    temp_file_path: str | None = None
+
+    try:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_file = tempfile.NamedTemporaryFile(
+            suffix=".sqlite3",
+            prefix=f"{db_path.stem}_import_",
+            dir=db_path.parent,
+            delete=False,
+        )
+        temp_file_path = temp_file.name
+
+        for chunk in uploaded_database.chunks():
+            temp_file.write(chunk)
+        temp_file.close()
+
+        _validate_sqlite_backup(Path(temp_file_path))
+        connections.close_all()
+
+        os.replace(temp_file_path, db_path)
+        temp_file_path = None
+
+        for suffix in ("-wal", "-shm"):
+            sidecar_path = f"{db_path}{suffix}"
+            if os.path.exists(sidecar_path):
+                os.remove(sidecar_path)
+
+        messages.success(request, "Base SQLite importada correctamente.")
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    except Exception as exc:
+        messages.error(request, f"No fue posible importar la base SQLite: {exc}")
+    finally:
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
     return redirect("dashboard")
